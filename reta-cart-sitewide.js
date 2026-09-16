@@ -20,9 +20,12 @@
                                    data-price-delivery, data-price-collection,
                                    data-vat-rate, data-product-name,
                                    data-product-slug, data-product-size
-     [data-reta-fulfilment-group]  wraps the two price cards
+     [data-reta-fulfilment-group]  wraps the two price cards (display)
      [data-reta-fulfilment]        "collection" / "delivery" on each card
-     [data-reta-fulfilment-hint]   shown until a card is chosen
+     [data-reta-fulfilment-select] the dropdown that chooses; its options
+                                   are filled in from the prices
+     [data-reta-fulfilment-row]    holds the dropdown (and the prompt)
+     [data-reta-qty-down/-up]      quantity stepper buttons
      [data-reta-product-image]     main product image
    Webflow's add-to-cart form supplies the product id and quantity.
 
@@ -388,18 +391,21 @@
   }
 
   // ---- PRODUCT PAGE ----------------------------------------------
-  // The two price cards become a radio group with no default choice. Add to
-  // Cart stays disabled until one is picked, then adds a line to this store
-  // at that fulfilment's price. Webflow's native add-to-cart never runs.
+  // The dropdown chooses Collection or Delivery (the price cards stay as the
+  // price display), the stepper sets the quantity, and Add to Cart writes a
+  // line to this store - webflow.js's own add-to-cart never runs. A page
+  // without the dropdown falls back to the cards doing the choosing.
   var SELECTOR_CSS =
-    "[data-reta-fulfilment]{position:relative;cursor:pointer;border-radius:1vw;outline:3px solid transparent;outline-offset:.4vw;transition:opacity .2s,outline-color .2s}" +
-    "[data-reta-fulfilment][aria-checked=true]{outline-color:var(--reta-dark-blue,#272252)}" +
-    "[data-reta-fulfilment][aria-checked=true]::after{content:'\\2713';position:absolute;top:-.6vw;right:-.6vw;width:max(1.5vw,20px);height:max(1.5vw,20px);border-radius:50%;background:var(--reta-dark-blue,#272252);color:#fff;font:700 max(.8vw,11px)/max(1.5vw,20px) sans-serif;text-align:center}" +
-    "[data-reta-selected] [aria-checked=false]{opacity:.55}" +
-    "[data-reta-needs-choice] [data-reta-fulfilment]{outline-color:var(--reta-orange,#ee7a30)}" +
-    "[data-reta-fulfilment]:focus-visible{outline-color:var(--reta-orange,#ee7a30)}" +
-    "[data-reta-fulfilment][aria-disabled=true]{opacity:.35;cursor:not-allowed}" +
-    "[data-reta-fulfilment-hint][data-reta-needs-choice]{color:var(--reta-orange,#ee7a30);font-weight:700}";
+    "[data-reta-fulfilment-select]{cursor:pointer}" +
+    "[data-reta-fulfilment-select][data-reta-needs-choice]{border-color:var(--reta-orange,#ee7a30)}" +
+    "[data-reta-choice-message]{color:var(--reta-orange,#ee7a30);font-weight:700;margin-left:.75vw}" +
+    "[data-reta-qty-down],[data-reta-qty-up]{-webkit-user-select:none}" +
+    "[data-reta-qty-down]:hover,[data-reta-qty-up]:hover{background:var(--light-grey,#f1f1f1)}" +
+    "input[name='commerce-add-to-cart-quantity-input']{-moz-appearance:textfield;appearance:textfield}" +
+    "input[name='commerce-add-to-cart-quantity-input']::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}" +
+    "[data-reta-cards-select] [data-reta-fulfilment]{cursor:pointer;transition:opacity .2s}" +
+    "[data-reta-cards-select][data-reta-selected] [aria-checked=false]{opacity:.55}" +
+    "[data-reta-fulfilment][aria-disabled=true]{opacity:.35}";
 
   function initProductPage() {
     var group = document.querySelector("[data-reta-fulfilment-group]"),
@@ -408,11 +414,10 @@
     if (!group || !form || !product) return;
     var btn = form.querySelector("[type=submit]"),
         qtyInput = form.querySelector("input[name='commerce-add-to-cart-quantity-input']"),
-        hint = document.querySelector("[data-reta-fulfilment-hint]"),
+        select = document.querySelector("[data-reta-fulfilment-select]"),
         cards = [].slice.call(group.querySelectorAll("[data-reta-fulfilment]")),
-        label = btn ? btn.value : "", chosen = "", timer,
-        hintAsk = "Please choose Collection or Delivery to add this product to your cart.";
-    if (!btn || !cards.length) return;
+        label = btn ? btn.value : "", chosen = "", timer, message = null;
+    if (!btn || (!select && !cards.length)) return;
 
     var style = document.createElement("style");
     style.textContent = SELECTOR_CSS;
@@ -424,55 +429,113 @@
     function qty() {
       return qtyInput ? toQty(qtyInput.value) || 1 : 1;
     }
-    // Add to Cart is never dimmed. Without a choice it says so instead.
+    // Shown beside the dropdown only when someone tries to add without choosing.
+    function say(text) {
+      if (!select) return;
+      if (!message) {
+        message = document.createElement("div");
+        message.className = "body-text";
+        message.setAttribute("data-reta-choice-message", "");
+        message.setAttribute("role", "alert");
+        (select.closest("[data-reta-fulfilment-row]") || select.parentNode).appendChild(message);
+      }
+      message.textContent = text;
+      message.style.display = text ? "" : "none";
+    }
+
+    // Add to Cart is never dimmed. Without a choice it asks for one instead.
     function render() {
       var price = priceOf(chosen), ready = !!chosen && !isNaN(price);
-      cards.forEach(function (c) {
-        c.setAttribute("aria-checked", String(c.getAttribute("data-reta-fulfilment") === chosen));
-      });
-      if (chosen) {
-        group.setAttribute("data-reta-selected", chosen);
-        group.removeAttribute("data-reta-needs-choice");
-        if (hint) {
-          hint.removeAttribute("data-reta-needs-choice");
-          hint.removeAttribute("role");
+      if (select) {
+        if (select.value !== chosen) select.value = chosen;
+        if (chosen) {
+          select.removeAttribute("data-reta-needs-choice");
+          say("");
+        }
+      } else {
+        cards.forEach(function (c) {
+          c.setAttribute("aria-checked", String(c.getAttribute("data-reta-fulfilment") === chosen));
+        });
+        if (chosen) {
+          group.setAttribute("data-reta-selected", chosen);
+          group.removeAttribute("data-reta-needs-choice");
         }
       }
-      if (hint) hint.style.display = chosen ? "none" : "";
       btn.setAttribute("data-reta-ready", String(ready));
-      btn.value = ready ? label + " \u2013 " + formatMoney(price * qty()) : label;
+      btn.value = ready ? label + " – " + formatMoney(price * qty()) : label;
     }
 
     function askForChoice() {
-      group.setAttribute("data-reta-needs-choice", "");
-      if (hint) {
-        hint.style.display = "";
-        hint.setAttribute("data-reta-needs-choice", "");
-        hint.setAttribute("role", "alert");
-        hint.textContent = hintAsk;
+      if (select) {
+        select.setAttribute("data-reta-needs-choice", "");
+        say("Please choose Collection or Delivery.");
+        select.focus();
+      } else {
+        group.setAttribute("data-reta-needs-choice", "");
+        var first = cards.filter(function (c) { return c.tabIndex === 0; })[0];
+        if (first) first.focus();
       }
-      var first = cards.filter(function (c) { return c.tabIndex === 0; })[0];
-      if (first) first.focus();
     }
 
-    group.setAttribute("role", "radiogroup");
-    group.setAttribute("aria-label", "Collection or delivery");
-    cards.forEach(function (c) {
-      var f = c.getAttribute("data-reta-fulfilment"), price = priceOf(f);
-      c.setAttribute("role", "radio");
-      if ((f !== "delivery" && f !== "collection") || isNaN(price)) {
-        c.setAttribute("aria-disabled", "true");
-        return;
-      }
-      c.tabIndex = 0;
-      c.setAttribute("aria-label", (f === "delivery" ? "Delivery " : "Collection ") + formatMoney(price));
-      c.addEventListener("click", function () { chosen = f; render(); });
-      c.addEventListener("keydown", function (e) {
-        if (e.key === " " || e.key === "Enter") { e.preventDefault(); chosen = f; render(); }
+    function choose(f) {
+      chosen = (f === "delivery" || f === "collection") ? f : "";
+      render();
+    }
+
+    if (select) {
+      select.innerHTML = "";
+      select.appendChild(new Option("Choose Collection or Delivery", ""));
+      ["collection", "delivery"].forEach(function (f) {
+        var price = priceOf(f);
+        if (isNaN(price)) return;
+        select.appendChild(new Option((f === "delivery" ? "Delivery" : "Collection") + " — " + formatMoney(price), f));
+      });
+      select.addEventListener("change", function () { choose(select.value); });
+      cards.forEach(function (c) {   // a card with no usable price is dimmed
+        if (isNaN(priceOf(c.getAttribute("data-reta-fulfilment")))) c.setAttribute("aria-disabled", "true");
+      });
+    } else {
+      group.setAttribute("data-reta-cards-select", "");
+      group.setAttribute("role", "radiogroup");
+      group.setAttribute("aria-label", "Collection or delivery");
+      cards.forEach(function (c) {
+        var f = c.getAttribute("data-reta-fulfilment"), price = priceOf(f);
+        c.setAttribute("role", "radio");
+        if ((f !== "delivery" && f !== "collection") || isNaN(price)) {
+          c.setAttribute("aria-disabled", "true");
+          return;
+        }
+        c.tabIndex = 0;
+        c.setAttribute("aria-label", (f === "delivery" ? "Delivery " : "Collection ") + formatMoney(price));
+        c.addEventListener("click", function () { choose(f); });
+        c.addEventListener("keydown", function (e) {
+          if (e.key === " " || e.key === "Enter") { e.preventDefault(); choose(f); }
+        });
+      });
+    }
+
+    // Quantity stepper: the box stays typable, the buttons nudge it.
+    function step(by) {
+      if (!qtyInput) return;
+      qtyInput.value = Math.min(MAX_QTY, Math.max(1, qty() + by));
+      render();
+    }
+    [["[data-reta-qty-down]", -1], ["[data-reta-qty-up]", 1]].forEach(function (pair) {
+      var el = document.querySelector(pair[0]);
+      if (!el) return;
+      el.addEventListener("click", function (e) { e.preventDefault(); step(pair[1]); });
+      el.addEventListener("keydown", function (e) {
+        if (e.key === " " || e.key === "Enter") { e.preventDefault(); step(pair[1]); }
       });
     });
+    if (qtyInput) {
+      qtyInput.addEventListener("input", render);
+      qtyInput.addEventListener("change", function () {
+        qtyInput.value = qty();   // tidy up whatever was typed
+        render();
+      });
+    }
     btn.setAttribute("data-reta-add-to-cart", "");
-    if (qtyInput) qtyInput.addEventListener("input", render);
 
     // Take the form away from webflow.js. Its add-to-cart handlers listen on
     // window in the capture phase, so they run before any listener here could,
