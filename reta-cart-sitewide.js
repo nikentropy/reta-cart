@@ -396,9 +396,10 @@
     "[data-reta-fulfilment][aria-checked=true]{outline-color:var(--reta-dark-blue,#272252)}" +
     "[data-reta-fulfilment][aria-checked=true]::after{content:'\\2713';position:absolute;top:-.6vw;right:-.6vw;width:max(1.5vw,20px);height:max(1.5vw,20px);border-radius:50%;background:var(--reta-dark-blue,#272252);color:#fff;font:700 max(.8vw,11px)/max(1.5vw,20px) sans-serif;text-align:center}" +
     "[data-reta-selected] [aria-checked=false]{opacity:.55}" +
+    "[data-reta-needs-choice] [data-reta-fulfilment]{outline-color:var(--reta-orange,#ee7a30)}" +
     "[data-reta-fulfilment]:focus-visible{outline-color:var(--reta-orange,#ee7a30)}" +
     "[data-reta-fulfilment][aria-disabled=true]{opacity:.35;cursor:not-allowed}" +
-    "[data-reta-add-to-cart][aria-disabled=true]{opacity:.45;pointer-events:none}";
+    "[data-reta-fulfilment-hint][data-reta-needs-choice]{color:var(--reta-orange,#ee7a30);font-weight:700}";
 
   function initProductPage() {
     var group = document.querySelector("[data-reta-fulfilment-group]"),
@@ -409,7 +410,8 @@
         qtyInput = form.querySelector("input[name='commerce-add-to-cart-quantity-input']"),
         hint = document.querySelector("[data-reta-fulfilment-hint]"),
         cards = [].slice.call(group.querySelectorAll("[data-reta-fulfilment]")),
-        label = btn ? btn.value : "", chosen = "", timer;
+        label = btn ? btn.value : "", chosen = "", timer,
+        hintAsk = "Please choose Collection or Delivery to add this product to your cart.";
     if (!btn || !cards.length) return;
 
     var style = document.createElement("style");
@@ -422,15 +424,35 @@
     function qty() {
       return qtyInput ? toQty(qtyInput.value) || 1 : 1;
     }
+    // Add to Cart is never dimmed. Without a choice it says so instead.
     function render() {
       var price = priceOf(chosen), ready = !!chosen && !isNaN(price);
       cards.forEach(function (c) {
         c.setAttribute("aria-checked", String(c.getAttribute("data-reta-fulfilment") === chosen));
       });
-      if (chosen) group.setAttribute("data-reta-selected", chosen);
+      if (chosen) {
+        group.setAttribute("data-reta-selected", chosen);
+        group.removeAttribute("data-reta-needs-choice");
+        if (hint) {
+          hint.removeAttribute("data-reta-needs-choice");
+          hint.removeAttribute("role");
+        }
+      }
       if (hint) hint.style.display = chosen ? "none" : "";
-      btn.setAttribute("aria-disabled", String(!ready));
+      btn.setAttribute("data-reta-ready", String(ready));
       btn.value = ready ? label + " \u2013 " + formatMoney(price * qty()) : label;
+    }
+
+    function askForChoice() {
+      group.setAttribute("data-reta-needs-choice", "");
+      if (hint) {
+        hint.style.display = "";
+        hint.setAttribute("data-reta-needs-choice", "");
+        hint.setAttribute("role", "alert");
+        hint.textContent = hintAsk;
+      }
+      var first = cards.filter(function (c) { return c.tabIndex === 0; })[0];
+      if (first) first.focus();
     }
 
     group.setAttribute("role", "radiogroup");
@@ -461,11 +483,7 @@
     // Every way of adding (click, Enter in the quantity box) ends in submit.
     form.addEventListener("submit", function (e) {
       e.preventDefault();
-      if (btn.getAttribute("aria-disabled") === "true") {
-        var first = cards.filter(function (c) { return c.tabIndex === 0; })[0];
-        if (first) first.focus();
-        return;
-      }
+      if (btn.getAttribute("data-reta-ready") !== "true") { askForChoice(); return; }
       var line = add(product, chosen, qty());
       btn.value = line ? "Added to cart" : "Sorry, this can't be added";
       clearTimeout(timer);
@@ -564,7 +582,27 @@
     var errorState = wrap.querySelector(".w-commerce-commercecarterrorstate");
     if (errorState) errorState.remove();
 
-    var rows = {}, notice = null, noticeTimer;
+    var style = document.createElement("style");
+    style.textContent = "[data-reta-name-link]{color:inherit;text-decoration:none}" +
+                        "[data-reta-name-link]:hover{text-decoration:underline}";
+    document.head.appendChild(style);
+
+    var rows = {}, notice = null, noticeTimer, resyncs = 0, resyncFrom = 0;
+
+    // The product name links back to its page.
+    function nameLink(row, l) {
+      var box = row.querySelector(".w-commerce-commercecartproductname");
+      if (!box) return;
+      var a = box.querySelector("[data-reta-name-link]");
+      if (!a) {
+        box.textContent = "";
+        a = document.createElement("a");
+        a.setAttribute("data-reta-name-link", "");
+        box.appendChild(a);
+      }
+      a.setAttribute("href", "/product/" + encodeURIComponent(l.slug));
+      a.textContent = l.name;
+    }
 
     function fill(row, l) {
       row.setAttribute("data-reta-key", l.key);
@@ -574,7 +612,7 @@
         img.setAttribute("alt", l.name);
         strip(img, ["srcset", "sizes"]);
       }
-      setText(row.querySelector(".w-commerce-commercecartproductname"), l.name);
+      nameLink(row, l);
       setText(sizeEl(row), l.size);
       setText(row.querySelector(".cart-text.price"), formatMoney(l.unitPrice));
       setText(row.querySelector(".item-vat-rate"), String(l.vatRate));
@@ -605,6 +643,34 @@
         badge.style.display = s.count ? "" : "none";
       }
     }
+
+    // webflow.js renders its own (unused) cart after this one and would leave
+    // the empty state, subtotal and badge showing its numbers; a page restored
+    // from the back/forward cache keeps whatever DOM it was frozen with. Both
+    // are put back from the store.
+    function domMatches(s) {
+      if (list.children.length !== s.lines.length) return false;
+      if (form.style.display !== (s.lines.length ? "" : "none")) return false;
+      if (empty && empty.style.display !== (s.lines.length ? "none" : "")) return false;
+      if (badge && (badge.textContent !== String(s.count) ||
+                    badge.style.display !== (s.count ? "" : "none"))) return false;
+      return true;
+    }
+    function resync() {
+      var t = Date.now();
+      if (t - resyncFrom > 2000) { resyncFrom = t; resyncs = 0; }
+      if (++resyncs > 20) return;   // never spin, whatever else is writing
+      var s = snapshot(load());
+      if (!domMatches(s)) renderDrawer(s);
+    }
+    if (window.MutationObserver) {
+      var pending;
+      new MutationObserver(function () {
+        clearTimeout(pending);
+        pending = setTimeout(resync, 50);
+      }).observe(wrap, { subtree: true, childList: true, attributes: true, attributeFilter: ["style"] });
+    }
+    window.addEventListener("pageshow", resync);
 
     // One line above the list: "Checking prices..." while the check runs, then
     // the notice if anything changed. Never blocks the cart.
@@ -690,6 +756,9 @@
   });
 
   load();   // discards an expired or unreadable cart straight away
+  // Every page load re-checks prices: the cache only saves repeat opens of the
+  // drawer within one page view, so a refresh is always a way to force a check.
+  try { window.sessionStorage.removeItem(PRICE_CACHE_KEY); } catch (e) {}
   try { initDrawer(); } catch (e) { err("[RETA] drawer setup failed", e); }
   try { initProductPage(); } catch (e) { err("[RETA] product page setup failed", e); }
   log("[RETA] cart script v1 ready", window.RETA.cart.get());
