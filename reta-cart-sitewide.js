@@ -176,15 +176,21 @@
   }
 
   function snapshot(cart) {
-    var count = 0, subtotal = 0, delivery = 0, hasDelivery = false;
+    var count = 0, subtotal = 0, vat = 0, delivery = 0, hasDelivery = false;
     cart.lines.forEach(function (l) {
       l.lineTotal = Math.round(l.unitPrice * l.qty * 100) / 100;
       count += l.qty;
       subtotal += l.lineTotal;
+      vat += l.lineTotal * (l.vatRate / 100);   // per line, like the checkout
       if (l.shipping === VARIANT_DELIVERY) { delivery += l.lineTotal; hasDelivery = true; }
     });
+    // No shipping figure here: every shipping method RETA offers is free, so
+    // this total matches the checkout's. A paid method would have to be added
+    // in both places.
     return { lines: cart.lines, count: count,
              subtotal: Math.round(subtotal * 100) / 100,
+             vatTotal: Math.round(vat * 100) / 100,
+             total: Math.round((subtotal + vat) * 100) / 100,
              deliverySubtotal: Math.round(delivery * 100) / 100,
              hasDelivery: hasDelivery };
   }
@@ -667,6 +673,26 @@
     var checkoutBtn = wrap.querySelector(".w-commerce-commercecartcheckoutbutton");
     strip(checkoutBtn, ["data-node-type", "data-loading-text"]);
 
+    // The drawer showed a subtotal only, so the figure on the button at the
+    // checkout came as a surprise. VAT and Total are added here in the same
+    // order the checkout's summary uses, cloned from Webflow's own subtotal
+    // row so they take the drawer's styling.
+    function summaryRow(label, after) {
+      var row = after.cloneNode(true), cells = row.querySelectorAll(".cart-title, .w-commerce-commercecartordervalue");
+      if (cells.length < 2) return null;
+      strip(row, ["aria-atomic", "aria-live"]);
+      [].forEach.call(cells, function (c) { strip(c, ["data-wf-bindings"]); });
+      cells[0].textContent = label;
+      cells[cells.length - 1].textContent = "";
+      after.parentNode.insertBefore(row, after.nextSibling);
+      return cells[cells.length - 1];
+    }
+    var subtotalRow = total && total.parentNode, vatValue = null, totalValue = null;
+    if (subtotalRow && subtotalRow.classList.contains("w-commerce-commercecartlineitem")) {
+      totalValue = summaryRow("Total", subtotalRow);
+      vatValue = summaryRow("VAT", subtotalRow);
+    }
+
     var style = document.createElement("style");
     style.textContent = "[data-reta-name-link]{color:inherit;text-decoration:none}" +
                         "[data-reta-name-link]:hover{text-decoration:underline}";
@@ -722,6 +748,8 @@
         if (!seen[k]) { rows[k].remove(); delete rows[k]; }
       });
       setText(total, formatMoney(s.subtotal));
+      setText(vatValue, formatMoney(s.vatTotal));
+      setText(totalValue, formatMoney(s.total));
       form.style.display = s.lines.length ? "" : "none";
       if (empty) empty.style.display = s.lines.length ? "none" : "";
       if (badge) {
@@ -795,22 +823,24 @@
       if (!s.hasDelivery || s.deliverySubtotal >= DELIVERY_MINIMUM) return "";
       return "Minimum order for delivery is " + formatMoney(DELIVERY_MINIMUM) +
              " (ex VAT). Your delivery items total " + formatMoney(s.deliverySubtotal) +
-             " — please add " + formatMoney(DELIVERY_MINIMUM - s.deliverySubtotal) +
+             ". Please add " + formatMoney(DELIVERY_MINIMUM - s.deliverySubtotal) +
              " more of delivery items, or switch them to collection.";
     }
-    // This one goes next to the button that was pressed: the list above it
-    // can be scrolled away, and a message up there would never be seen.
+    // Below the button that was pressed, and built from the checkout's own
+    // error-box classes, so the same message reads the same in both places.
+    // The list above can be scrolled away, so a message up there is no use.
     function showBlocker(text) {
       if (!blocker) {
         blocker = document.createElement("div");
-        blocker.className = "cart-text";
+        blocker.className = "checkout-validation-field-error";
         blocker.setAttribute("data-reta-cart-blocker", "");
-        blocker.setAttribute("aria-live", "assertive");
-        blocker.style.cssText = "color:var(--reta-orange, #ee7a30);margin-bottom:10px";
-        checkoutBtn.parentNode.insertBefore(blocker, checkoutBtn);
+        blocker.innerHTML = '<div class="checkout-validation-error cart" aria-live="assertive"></div>';
+        checkoutBtn.parentNode.insertBefore(blocker, checkoutBtn.nextSibling);
       }
-      blocker.textContent = text;
-      blocker.style.display = text ? "" : "none";
+      blocker.firstChild.textContent = text;
+      // That class sets display:none, so showing it needs the same priority
+      // the checkout uses.
+      blocker.style.setProperty("display", text ? "block" : "none", "important");
       blocking = !!text;
     }
     if (checkoutBtn) checkoutBtn.addEventListener("click", function (e) {
