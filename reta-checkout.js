@@ -329,7 +329,7 @@
       showValidationErrors([
         "Minimum order for delivery is " + formatMoney(minimum) +
         " (ex VAT). Your delivery items total " + formatMoney(deliveryValue) +
-        " — please add " + formatMoney(minimum - deliveryValue) +
+        ". Please add " + formatMoney(minimum - deliveryValue) +
         " more of delivery items, or switch them to collection."
       ]);
       setOrderButtonEnabled(false);
