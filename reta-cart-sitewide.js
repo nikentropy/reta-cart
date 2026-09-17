@@ -691,11 +691,17 @@
     if (subtotalRow && subtotalRow.classList.contains("w-commerce-commercecartlineitem")) {
       totalValue = summaryRow("Total", subtotalRow);
       vatValue = summaryRow("VAT", subtotalRow);
+      // The checkout's summary lines sit 8px apart; Webflow's cart row adds
+      // 16px on top of that. Close it up on every line but the last, whose
+      // margin is the gap down to the button.
+      subtotalRow.setAttribute("data-reta-tight-row", "");
+      if (vatValue) vatValue.parentNode.setAttribute("data-reta-tight-row", "");
     }
 
     var style = document.createElement("style");
     style.textContent = "[data-reta-name-link]{color:inherit;text-decoration:none}" +
-                        "[data-reta-name-link]:hover{text-decoration:underline}";
+                        "[data-reta-name-link]:hover{text-decoration:underline}" +
+                        "[data-reta-tight-row]{margin-bottom:0}";
     document.head.appendChild(style);
 
     var rows = {}, notice = null, noticeTimer, blocker = null, blocking = false,
