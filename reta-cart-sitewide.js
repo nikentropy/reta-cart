@@ -40,7 +40,8 @@
      subscribe(fn)               -> unsubscribe
        fn({ type, lines, count, subtotal, ... }) on every change
    window.RETA.priceCheck
-     run()                       -> Promise { ok, changed }
+     run()                       -> Promise { ok, changed, gone }
+                                 gone = products whose page 404s
      on                          "open" | "checkout"
 
    Paste into: Site settings > Custom code > Footer code
@@ -315,7 +316,7 @@
   // All pages in parallel under one shared deadline. Pages back in time are
   // used; the rest keep their stored prices.
   function fetchPages(lines) {
-    var ctrl = window.AbortController ? new AbortController() : null, timer, prices = {}, failed = 0;
+    var ctrl = window.AbortController ? new AbortController() : null, timer, prices = {}, failed = 0, gone = [];
     var deadline = new Promise(function (resolve, reject) {
       timer = setTimeout(function () {
         if (ctrl) ctrl.abort();
@@ -326,7 +327,12 @@
       var page = fetch("/product/" + encodeURIComponent(l.slug), {
         cache: "no-cache", signal: ctrl ? ctrl.signal : undefined
       }).then(function (res) {
-        if (!res.ok) throw new Error("HTTP " + res.status);
+        if (!res.ok) {
+          // 404/410 means the product page itself is gone: deleted, or
+          // unpublished. The checkout blocks those lines.
+          if (res.status === 404 || res.status === 410) gone.push(l.productId);
+          throw new Error("HTTP " + res.status);
+        }
         return res.text();
       }).then(function (html) {
         return parseProductPage(html, l.productId);
@@ -339,7 +345,7 @@
       });
     })).then(function () {
       clearTimeout(timer);
-      return { prices: prices, failed: failed };
+      return { prices: prices, failed: failed, gone: gone };
     });
   }
 
@@ -363,7 +369,7 @@
   function runPriceCheck() {
     if (checking) return checking;
     var lines = load().lines;
-    if (!lines.length) return Promise.resolve({ ok: false, skipped: true, changed: [] });
+    if (!lines.length) return Promise.resolve({ ok: false, skipped: true, changed: [], gone: [] });
 
     var cache = readCache(), t = Date.now(), prices = Object.create(null), toFetch = [];
     lines.forEach(function (l) {
@@ -374,14 +380,14 @@
 
     if (toFetch.length) emit("checking");
     checking = Promise.resolve(toFetch).then(function (list) {
-      return list.length ? fetchPages(list) : { prices: {}, failed: 0 };
+      return list.length ? fetchPages(list) : { prices: {}, failed: 0, gone: [] };
     }).then(function (fetched) {
       cachePrices(fetched.prices);
       for (var id in fetched.prices) prices[id] = fetched.prices[id];
-      return { ok: !fetched.failed, changed: applyPrices(prices) };
+      return { ok: !fetched.failed, changed: applyPrices(prices), gone: fetched.gone };
     }).catch(function (e) {
       err("[RETA] price check failed, keeping stored prices:", e);
-      return { ok: false, changed: [] };
+      return { ok: false, changed: [], gone: [] };
     }).then(function (result) {
       checking = null;
       emit("checked", result);
