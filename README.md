@@ -8,8 +8,9 @@ code fields are too small for them, so the site references them with a one-line
 | File | Where it runs | What it does |
 |---|---|---|
 | `reta-cart-sitewide.js` | Site settings → Footer code, every page | Cart store (localStorage), product page Collection/Delivery selector, cart drawer and nav badge, price re-check |
+| `reta-checkout.js` | Checkout page → Footer code | Renders the order from the cart, per-line VAT, shipping option, £300 delivery minimum, validation, Pay button |
 
-Phase 6 adds `reta-checkout.js` for the checkout page.
+They are separate files because the checkout one is only needed on `/checkout`, and a change to it shouldn't invalidate the cached site-wide file.
 
 ## Referencing a version
 
