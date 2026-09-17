@@ -64,6 +64,11 @@
   var VARIANT_DELIVERY   = "Delivery";
   var VARIANT_COLLECTION = "Collection (Blackburn Branch)";
 
+  // Minimum spend on the DELIVERY portion only, ex VAT. The drawer's checkout
+  // button and the checkout both use this one number: the checkout reads it
+  // from RETA.cart, so change it here.
+  var DELIVERY_MINIMUM = 300.00;
+
   // Price check: re-reads prices from each product's own page.
   var PRICE_CHECK_ON         = "open";  // "open" = drawer opens, "checkout" = checkout page
   var PRICE_CHECK_TIMEOUT_MS = 2500;    // pages not back by then keep stored prices
@@ -171,13 +176,17 @@
   }
 
   function snapshot(cart) {
-    var count = 0, subtotal = 0;
+    var count = 0, subtotal = 0, delivery = 0, hasDelivery = false;
     cart.lines.forEach(function (l) {
       l.lineTotal = Math.round(l.unitPrice * l.qty * 100) / 100;
       count += l.qty;
       subtotal += l.lineTotal;
+      if (l.shipping === VARIANT_DELIVERY) { delivery += l.lineTotal; hasDelivery = true; }
     });
-    return { lines: cart.lines, count: count, subtotal: Math.round(subtotal * 100) / 100 };
+    return { lines: cart.lines, count: count,
+             subtotal: Math.round(subtotal * 100) / 100,
+             deliverySubtotal: Math.round(delivery * 100) / 100,
+             hasDelivery: hasDelivery };
   }
 
   // ---- EVENTS ----------------------------------------------------
@@ -650,13 +659,21 @@
     // goes altogether. Cart messages are the notice below.
     var errorState = wrap.querySelector(".w-commerce-commercecarterrorstate");
     if (errorState) errorState.remove();
+    // Checkout Securely is webflow.js's too: it takes the click, shows its
+    // data-loading-text and tries to open a Webflow order from a cart that is
+    // now always empty, so the button sits on "Please wait..." and never
+    // navigates. Same fix as the add-to-cart form - webflow.js matches on
+    // data-node-type at click time, so removing it hands us the click.
+    var checkoutBtn = wrap.querySelector(".w-commerce-commercecartcheckoutbutton");
+    strip(checkoutBtn, ["data-node-type", "data-loading-text"]);
 
     var style = document.createElement("style");
     style.textContent = "[data-reta-name-link]{color:inherit;text-decoration:none}" +
                         "[data-reta-name-link]:hover{text-decoration:underline}";
     document.head.appendChild(style);
 
-    var rows = {}, notice = null, noticeTimer, resyncs = 0, resyncFrom = 0;
+    var rows = {}, notice = null, noticeTimer, blocker = null, blocking = false,
+        resyncs = 0, resyncFrom = 0;
 
     // The product name links back to its page.
     function nameLink(row, l) {
@@ -772,10 +789,45 @@
       if (!raw || !setQty(row.getAttribute("data-reta-key"), raw)) renderDrawer(snapshot(load()));
     });
 
+    // The £300 delivery minimum, worded and applied exactly as the checkout
+    // does it, so the drawer never sends anyone to a checkout that refuses.
+    function belowMinimum(s) {
+      if (!s.hasDelivery || s.deliverySubtotal >= DELIVERY_MINIMUM) return "";
+      return "Minimum order for delivery is " + formatMoney(DELIVERY_MINIMUM) +
+             " (ex VAT). Your delivery items total " + formatMoney(s.deliverySubtotal) +
+             " — please add " + formatMoney(DELIVERY_MINIMUM - s.deliverySubtotal) +
+             " more of delivery items, or switch them to collection.";
+    }
+    // This one goes next to the button that was pressed: the list above it
+    // can be scrolled away, and a message up there would never be seen.
+    function showBlocker(text) {
+      if (!blocker) {
+        blocker = document.createElement("div");
+        blocker.className = "cart-text";
+        blocker.setAttribute("data-reta-cart-blocker", "");
+        blocker.setAttribute("aria-live", "assertive");
+        blocker.style.cssText = "color:var(--reta-orange, #ee7a30);margin-bottom:10px";
+        checkoutBtn.parentNode.insertBefore(blocker, checkoutBtn);
+      }
+      blocker.textContent = text;
+      blocker.style.display = text ? "" : "none";
+      blocking = !!text;
+    }
+    if (checkoutBtn) checkoutBtn.addEventListener("click", function (e) {
+      e.preventDefault();
+      var s = snapshot(load()), message = belowMinimum(s);
+      if (!s.lines.length) return;
+      if (message) { showBlocker(message); return; }
+      window.location.href = checkoutBtn.getAttribute("href") || "/checkout";
+    });
+
     subscribers.push(function (d) {
       renderDrawer(d);
       if (d.type === "checking") showNotice("Checking prices…", 0);
       else if (d.type === "checked") showNotice(d.changed && d.changed.length ? "Prices have been updated" : "", 6000);
+      // The cart moved under a minimum message: recheck it rather than leave
+      // a figure on screen that is no longer true.
+      if (blocking) showBlocker(belowMinimum(d));
     });
 
     // Re-check prices whenever the drawer opens, however it was opened.
@@ -804,6 +856,7 @@
   window.RETA.cart = {
     DELIVERY: VARIANT_DELIVERY,
     COLLECTION: VARIANT_COLLECTION,
+    DELIVERY_MINIMUM: DELIVERY_MINIMUM,
     get: function () { return snapshot(load()); },
     add: add,
     setQty: setQty,
