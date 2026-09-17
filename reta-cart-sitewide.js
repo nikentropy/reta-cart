@@ -69,6 +69,12 @@
   // from RETA.cart, so change it here.
   var DELIVERY_MINIMUM = 300.00;
 
+  // Webflow's native Add to Cart threw the drawer open on every add. That gets
+  // in the way when someone is adding several things, so the confirmation is
+  // the button's "Added to cart" and the badge instead. Set true to bring the
+  // old behaviour back.
+  var OPEN_CART_ON_ADD = false;
+
   // Price check: re-reads prices from each product's own page.
   var PRICE_CHECK_ON         = "open";  // "open" = drawer opens, "checkout" = checkout page
   var PRICE_CHECK_TIMEOUT_MS = 2500;    // pages not back by then keep stored prices
@@ -584,7 +590,7 @@
       btn.value = line ? "Added to cart" : "Sorry, this can't be added";
       clearTimeout(timer);
       timer = setTimeout(render, 2000);
-      if (line) openDrawer();   // same as Webflow's native add-to-cart did
+      if (line && OPEN_CART_ON_ADD) openDrawer();
     });
     render();
   }
