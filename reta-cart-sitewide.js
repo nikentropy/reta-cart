@@ -419,8 +419,14 @@
   var SELECTOR_CSS =
     "[data-reta-fulfilment-select]{-webkit-appearance:none;-moz-appearance:none;appearance:none;cursor:pointer}" +
     "[data-reta-fulfilment-select][data-reta-needs-choice]{box-shadow:0 0 0 2px var(--reta-orange,#ee7a30)}" +
-    "[data-reta-choice-message]{color:var(--reta-orange,#ee7a30);font-weight:700;margin:0;width:100%;text-align:left}" +
-    "@media (max-width:479px){[data-reta-choice-message]{text-align:center}}" +
+    // .body-text is sized in vw, which leaves this at about 10px on a phone,
+    // so the message sets its own size. The margins matter at landscape phone
+    // sizes, where the grid's 1.5vh row gap is only a few pixels.
+    "[data-reta-choice-message]{color:var(--reta-orange,#ee7a30);font-weight:700;" +
+      "font-size:max(13px,.9vw);line-height:1.3;margin:0;width:100%;text-align:left}" +
+    "@media (max-width:991px){[data-reta-choice-message]{font-size:15px;margin:4px 0}}" +
+    "@media (max-width:767px){[data-reta-choice-message]{font-size:16px;margin:8px 0 6px}}" +
+    "@media (max-width:479px){[data-reta-choice-message]{font-size:15px;text-align:center;margin:4px 0 2px}}" +
     "[data-reta-qty-down],[data-reta-qty-up]{-webkit-user-select:none}" +
     "[data-reta-qty-down]:hover,[data-reta-qty-up]:hover{background:var(--light-grey,#f1f1f1)}" +
     "input[name='commerce-add-to-cart-quantity-input']{-moz-appearance:textfield;appearance:textfield}" +
