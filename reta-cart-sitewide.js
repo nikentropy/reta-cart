@@ -396,8 +396,8 @@
   // line to this store - webflow.js's own add-to-cart never runs. A page
   // without the dropdown falls back to the cards doing the choosing.
   var SELECTOR_CSS =
-    "[data-reta-fulfilment-select]{cursor:pointer}" +
-    "[data-reta-fulfilment-select][data-reta-needs-choice]{border-color:var(--reta-orange,#ee7a30)}" +
+    "[data-reta-fulfilment-select]{-webkit-appearance:none;-moz-appearance:none;appearance:none;cursor:pointer}" +
+    "[data-reta-fulfilment-select][data-reta-needs-choice]{box-shadow:0 0 0 2px var(--reta-orange,#ee7a30)}" +
     "[data-reta-choice-message]{color:var(--reta-orange,#ee7a30);font-weight:700;margin-left:.75vw}" +
     "[data-reta-qty-down],[data-reta-qty-up]{-webkit-user-select:none}" +
     "[data-reta-qty-down]:hover,[data-reta-qty-up]:hover{background:var(--light-grey,#f1f1f1)}" +
@@ -488,7 +488,7 @@
       ["collection", "delivery"].forEach(function (f) {
         var price = priceOf(f);
         if (isNaN(price)) return;
-        select.appendChild(new Option((f === "delivery" ? "Delivery" : "Collection") + " — " + formatMoney(price), f));
+        select.appendChild(new Option(toShipping(f) + " \u2014 " + formatMoney(price), f));
       });
       select.addEventListener("change", function () { choose(select.value); });
       cards.forEach(function (c) {   // a card with no usable price is dimmed
@@ -506,7 +506,7 @@
           return;
         }
         c.tabIndex = 0;
-        c.setAttribute("aria-label", (f === "delivery" ? "Delivery " : "Collection ") + formatMoney(price));
+        c.setAttribute("aria-label", toShipping(f) + " " + formatMoney(price));
         c.addEventListener("click", function () { choose(f); });
         c.addEventListener("keydown", function (e) {
           if (e.key === " " || e.key === "Enter") { e.preventDefault(); choose(f); }
