@@ -717,13 +717,37 @@
     }
 
     var style = document.createElement("style");
+    // The cart button pulses when something is added: the same brightness as
+    // its own :hover (.cart-button:hover in the site stylesheet), plus a grow
+    // and settle. With the drawer no longer opening, this is the confirmation.
+    var BRIGHT = "saturate(150%) brightness(120%)";
     style.textContent = "[data-reta-name-link]{color:inherit;text-decoration:none}" +
                         "[data-reta-name-link]:hover{text-decoration:underline}" +
-                        "[data-reta-tight-row]{margin-bottom:0}";
+                        "[data-reta-tight-row]{margin-bottom:0}" +
+                        "@keyframes reta-cart-bump{" +
+                          "0%{transform:scale(1);filter:none}" +
+                          "25%{transform:scale(1.18);filter:" + BRIGHT + "}" +
+                          "55%{transform:scale(1.06);filter:" + BRIGHT + "}" +
+                          "100%{transform:scale(1);filter:none}}" +
+                        "@keyframes reta-cart-flash{" +
+                          "0%{filter:none}30%{filter:" + BRIGHT + "}100%{filter:none}}" +
+                        "[data-reta-bump]{animation:reta-cart-bump .55s cubic-bezier(.445,.05,.55,.95)}" +
+                        "@media (prefers-reduced-motion:reduce){" +
+                          "[data-reta-bump]{animation-name:reta-cart-flash}}";
     document.head.appendChild(style);
 
     var rows = {}, notice = null, noticeTimer, blocker = null, blocking = false,
-        resyncs = 0, resyncFrom = 0;
+        resyncs = 0, resyncFrom = 0, bumpTimer;
+
+    var cartLink = wrap.querySelector(".w-commerce-commercecartopenlink");
+    function bump() {
+      if (!cartLink) return;
+      cartLink.removeAttribute("data-reta-bump");
+      void cartLink.offsetWidth;   // restart the animation for a quick second add
+      cartLink.setAttribute("data-reta-bump", "");
+      clearTimeout(bumpTimer);
+      bumpTimer = setTimeout(function () { cartLink.removeAttribute("data-reta-bump"); }, 700);
+    }
 
     // The product name links back to its page.
     function nameLink(row, l) {
@@ -877,6 +901,7 @@
 
     subscribers.push(function (d) {
       renderDrawer(d);
+      if (d.type === "add") bump();
       if (d.type === "checking") showNotice("Checking prices…", 0);
       else if (d.type === "checked") showNotice(d.changed && d.changed.length ? "Prices have been updated" : "", 6000);
       // The cart moved under a minimum message: recheck it rather than leave
