@@ -419,7 +419,8 @@
   var SELECTOR_CSS =
     "[data-reta-fulfilment-select]{-webkit-appearance:none;-moz-appearance:none;appearance:none;cursor:pointer}" +
     "[data-reta-fulfilment-select][data-reta-needs-choice]{box-shadow:0 0 0 2px var(--reta-orange,#ee7a30)}" +
-    "[data-reta-choice-message]{color:var(--reta-orange,#ee7a30);font-weight:700;margin-left:.75vw}" +
+    "[data-reta-choice-message]{color:var(--reta-orange,#ee7a30);font-weight:700;margin:0;width:100%;text-align:left}" +
+    "@media (max-width:479px){[data-reta-choice-message]{text-align:center}}" +
     "[data-reta-qty-down],[data-reta-qty-up]{-webkit-user-select:none}" +
     "[data-reta-qty-down]:hover,[data-reta-qty-up]:hover{background:var(--light-grey,#f1f1f1)}" +
     "input[name='commerce-add-to-cart-quantity-input']{-moz-appearance:textfield;appearance:textfield}" +
@@ -458,7 +459,12 @@
         message.className = "body-text";
         message.setAttribute("data-reta-choice-message", "");
         message.setAttribute("role", "alert");
-        (select.closest("[data-reta-fulfilment-row]") || select.parentNode).appendChild(message);
+        // Its own row in the buy grid, directly under the dropdown. Sharing
+        // the dropdown's row squeezed the select and wrapped the text into a
+        // mess at every width.
+        var row = select.closest("[data-reta-fulfilment-row]");
+        if (row && row.parentNode) row.parentNode.insertBefore(message, row.nextSibling);
+        else (row || select.parentNode).appendChild(message);
       }
       message.textContent = text;
       message.style.display = text ? "" : "none";
