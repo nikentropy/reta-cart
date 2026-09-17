@@ -39,7 +39,13 @@
   log("[RETA] checkout script v3 (reads the cart store) live");
 
   // ---- CONFIG ----------------------------------------------------
-  var DELIVERY_MINIMUM = 300.00;   // £ ex-VAT minimum for delivery
+  var DELIVERY_MINIMUM = 300.00;   // £ ex-VAT minimum for delivery, and the
+  // fallback only: the cart script owns this number so the drawer's checkout
+  // button and this page can't disagree. Change it there.
+  function deliveryMinimum() {
+    var c = cartStore();
+    return c && typeof c.DELIVERY_MINIMUM === "number" ? c.DELIVERY_MINIMUM : DELIVERY_MINIMUM;
+  }
   var CHECK_PRICES     = true;     // re-read live prices before an order is placed
   var CONFIRM_CHANGES  = true;     // a changed price asks for one more press of Pay
 
@@ -316,13 +322,14 @@
     // Apply the minimum to the DELIVERY PORTION only (ex VAT), not the whole
     // basket — so a small delivery portion can't be carried by collection items.
     var deliveryValue = totals.deliverySubtotal || 0;
-    var belowMin = deliveryValue < DELIVERY_MINIMUM;
+    var minimum = deliveryMinimum();
+    var belowMin = deliveryValue < minimum;
 
     if (involvesDelivery && belowMin) {
       showValidationErrors([
-        "Minimum order for delivery is " + formatMoney(DELIVERY_MINIMUM) +
+        "Minimum order for delivery is " + formatMoney(minimum) +
         " (ex VAT). Your delivery items total " + formatMoney(deliveryValue) +
-        " — please add " + formatMoney(DELIVERY_MINIMUM - deliveryValue) +
+        " — please add " + formatMoney(minimum - deliveryValue) +
         " more of delivery items, or switch them to collection."
       ]);
       setOrderButtonEnabled(false);
